@@ -24,157 +24,8 @@ class Flow {
     //Constructor de la clase
     function __construct() {
         //global $flow_medioPago;
-        $this->order["OrdenNumero"] = "";
-        $this->order["Concepto"] = "";
-        $this->order["Monto"] = "";
-        $this->order["MedioPago"] = config('flow.medioPago');
-        $this->order["FlowNumero"] = "";
-        $this->order["Pagador"] = "";
-        $this->order["Status"] = "";
-        $this->order["Error"] = "";
-    }
-
-    // Metodos SET
-
-    /**
-     * Set el número de Orden del comercio
-     *
-     * @param string $orderNumer El número de la Orden del Comercio
-     *
-     * @return bool (true/false)
-     */
-    public function setOrderNumber($orderNumber) {
-        if(!empty($orderNumber)) {
-            $this->order["OrdenNumero"] = $orderNumber;
-        }
-        $this->flow_log("Asigna Orden N°: ". $this->order["OrdenNumero"], '');
-        return !empty($orderNumber);
-    }
-
-    /**
-     * Set el concepto de pago
-     *
-     * @param string $concepto El concepto del pago
-     *
-     * @return bool (true/false)
-     */
-    public function setConcept($concepto) {
-        if(!empty($concepto)) {
-            $this->order["Concepto"] = $concepto;
-        }
-        return !empty($concepto);
-    }
-
-    /**
-     * Set el monto del pago
-     *
-     * @param string $monto El monto del pago
-     *
-     * @return bool (true/false)
-     */
-    public function setAmount($monto) {
-        if(!empty($monto)) {
-            $this->order["Monto"] = $monto;
-        }
-        return !empty($monto);
-    }
-
-    /**
-     * Set Medio de Pago, por default el Medio de Pago será el configurada en config.php
-     *
-     * @param string $medio El Medio de Pago de esta orden
-     *
-     * @return bool (true/false)
-     */
-    public function setMedio($medio) {
-        if(!empty($medio)) {
-            $this->order["MedioPago"] = $medio;
-            return TRUE;
-        } else {
-            return FALSE;
-        }
-    }
-
-    /**
-     * Set pagador, el email del pagador de esta orden
-     *
-     * @param string $email El email del pagador de la orden
-     *
-     * @return bool (true/false)
-     */
-    public function setPagador($email) {
-        if(!empty($email)) {
-            $this->order["Pagador"] = $email;
-            return TRUE;
-        } else {
-            return FALSE;
-        }
-    }
-
-
-    // Metodos GET
-
-    /**
-     * Get el número de Orden del Comercio
-     *
-     * @return string el número de Orden del comercio
-     */
-    public function getOrderNumber() {
-        return $this->order["OrdenNumero"];
-    }
-
-    /**
-     * Get el concepto de Orden del Comercio
-     *
-     * @return string el concepto de Orden del comercio
-     */
-    public function getConcept() {
-        return $this->order["Concepto"];
-    }
-
-    /**
-     * Get el monto de Orden del Comercio
-     *
-     * @return string el monto de la Orden del comercio
-     */
-    public function getAmount() {
-        return $this->order["Monto"];
-    }
-
-    /**
-     * Get el Medio de Pago para de Orden del Comercio
-     *
-     * @return string el Medio de pago de esta Orden del comercio
-     */
-    public function getMedio() {
-        return $this->order["MedioPago"];
-    }
-
-    /**
-     * Get el estado de la Orden del Comercio
-     *
-     * @return string el estado de la Orden del comercio
-     */
-    public function getStatus() {
-        return $this->order["Status"];
-    }
-
-    /**
-     * Get el número de Orden de Flow
-     *
-     * @return string el número de la Orden de Flow
-     */
-    public function getFlowNumber() {
-        return $this->order["FlowNumero"];
-    }
-
-    /**
-     * Get el email del pagador de la Orden
-     *
-     * @return string el email del pagador de la Orden de Flow
-     */
-    public function getPayer() {
-        return $this->order["Pagador"];
+        $this->secretKey = config('flow.secret_key');
+        $this->api_key = config('flow.api_key');
     }
 
 
@@ -189,8 +40,7 @@ class Flow {
      *
      * @return string flow_pack Paquete de datos firmados listos para ser enviados a Flow
      */
-    public function new_order($orden_compra, $monto,  $concepto, $email_pagador, $medioPago = "Non") {
-        //global $flow_medioPago;
+    public function createNewOrder($orden_compra, $monto,  $concepto, $email_pagador, $optionals = [], $medioPago = "Non") {
         $this->flow_log("Iniciando nueva Orden", "new_order");
         if(!isset($orden_compra,$monto,$concepto)) {
             $this->flow_log("Error: No se pasaron todos los parámetros obligatorios","new_order");
@@ -202,114 +52,66 @@ class Flow {
             $this->flow_log("Error: El parámetro monto de la orden debe ser numérico","new_order");
             throw new Exception("El monto de la orden debe ser numérico");
         }
-        $this->order["OrdenNumero"] = $orden_compra;
-        $this->order["Concepto"] = $concepto;
-        $this->order["Monto"] = $monto;
-        $this->order["MedioPago"] = $medioPago;
-        $this->order["Pagador"] = $email_pagador;
-        return $this->flow_pack();
+
+        $url_confirmacion = $this->generarUrl(config('flow.url_confirmacion'));
+        $url_retorno = $this->generarUrl(config('flow.url_retorno'));
+
+        $params = array(
+            "apiKey" => $this->api_key,
+            "commerceOrder" => $orden_compra,
+            "subject" => $concepto,
+            "currency" => "CLP",
+            "amount" => $monto,
+            "email" =>  $email_pagador,
+            "paymentMethod" => $medioPago,
+            "urlConfirmation" => $url_confirmacion,
+            "urlReturn" => $url_retorno,
+            "optional" => json_encode($optionals)
+        );
+
+        $params["s"] = $this->signParams($params);
+        return $params;
     }
 
     /**
-     * Lee los datos enviados desde Flow a la página de confirmación del comercio
+     * Hace la llamada a flow para crear la orden y obtener la url de pago
+     *
+     * @param string $params Parametros firmados
      *
      */
-    public function read_confirm() {
-        if(!isset($_POST['response'])) {
-            $this->flow_log("Respuesta Inválida", "read_confirm");
-            throw new Exception('Invalid response');
-        }
-        $data = $_POST['response'];
-        $params = array();
-        parse_str($data, $params);
-        if(!isset($params['status'])) {
-            $this->flow_log("Respuesta sin status", "read_confirm");
-            throw new Exception('Invalid response status');
-        }
-        $this->order['Status'] = $params['status'];
-        $this->flow_log("Lee Status: " . $params['status'], "read_confirm");
-        if (!isset($params['s'])) {
-            $this->flow_log("Mensaje no tiene firma", "read_confirm");
-            throw new Exception('Invalid response (no signature)');
-        }
-        if(!$this->flow_sign_validate($params['s'], $data)) {
-            $this->flow_log("firma invalida", "read_confirm");
-            throw new Exception('Invalid signature from Flow');
-        }
-        $this->flow_log("Firma verificada", "read_confirm");
-        if($params['status'] == "ERROR") {
-            $this->flow_log("Error: " .$params['kpf_error'], "read_confirm");
-            $this->order["Error"] = $params['kpf_error'];
-            return;
-        }
-        if(!isset($params['kpf_orden'])) {
-            throw new Exception('Invalid response Orden number');
-        }
-        $this->order['OrdenNumero'] = $params['kpf_orden'];
-        $this->flow_log("Lee Numero Orden: " . $params['kpf_orden'], "read_confirm");
-        if(!isset($params['kpf_monto'])) {
-            throw new Exception('Invalid response Amount');
-        }
-        $this->order['Monto'] = $params['kpf_monto'];
-        $this->flow_log("Lee Monto: " . $params['kpf_monto'], "read_confirm");
-        if(isset($params['kpf_flow_order'])) {
-            $this->order['FlowNumero'] = $params['kpf_flow_order'];
-            $this->flow_log("Lee Orden Flow: " . $params['kpf_flow_order'], "read_confirm");
-        }
-        if(isset($params['kpf_pagador'])) {
-            $this->order['Pagador'] = $params['kpf_pagador'];
-        }
-
+    public function createFlowOrder($signedParams) {
+        $url = config('flow.base_url') . '/payment/create';
+        $response = $this->httpPost($url, $signedParams);
+        $data = json_decode($response["output"], true);
+        return $data;
     }
 
-    /**
-     * Método para responder a Flow el resultado de la confirmación del comercio
-     *
-     * @param bool $result (true: Acepta el pago, false rechaza el pago)
-     *
-     * @return string paquete firmado para enviar la respuesta del comercio
-     */
-    public function build_response($result){
-        //global $flow_comercio;
-        $r = ($result) ? "ACEPTADO" : "RECHAZADO";
-        $data = array();
-        $data["status"] = $r;
-        $data["c"] = config('flow.comercio');
-        $q = http_build_query($data);
-        $s = $this->flow_sign($q);
-        $this->flow_log("Orden N°: ".$this->order["OrdenNumero"]. " - Status: $r","flow_build_response");
-        return $q."&s=".$s;
+    public function getOrderStatusByOrderID($flowOrderID){
+        $url = config('flow.base_url') . '/payment/getStatusByFlowOrder';
+
+        $params = array(
+            "apiKey" => $this->api_key,
+            "flowOrder" => $flowOrderID
+        );
+
+        $params["s"] = $this->signParams($params);
+        $response = $this->httpGet($url, $params);        
+        $data = json_decode($response["output"], true);
+        return $data;
     }
 
-    /**
-     * Método para recuperar los datos  en la página de Exito o Fracaso del Comercio
-     *
-     */
-    public function read_result() {
-        if(!isset($_POST['response'])) {
-            $this->flow_log("Respuesta Inválida", "read_result");
-            throw new Exception('Invalid response');
-        }
-        $data = $_POST['response'];
-        $params = array();
-        parse_str($data, $params);
-        if (!isset($params['s'])) {
-            $this->flow_log("Mensaje no tiene firma", "read_result");
-            throw new Exception('Invalid response (no signature)');
-        }
-        if(!$this->flow_sign_validate($params['s'], $data)) {
-            $this->flow_log("firma invalida", "read_result");
-            throw new Exception('Invalid signature from Flow');
-        }
-        //$this->order["Comision"] = $flow_tasa_default;
-        $this->order["Status"] = "";
-        $this->order["Error"] = "";
-        $this->order['OrdenNumero'] = $params['kpf_orden'];
-        $this->order['Concepto'] = $params['kpf_concepto'];
-        $this->order['Monto'] = $params['kpf_monto'];
-        $this->order["FlowNumero"] = $params["kpf_flow_order"];
-        $this->order["Pagador"] = $params["kpf_pagador"];
-        $this->flow_log("Datos recuperados Orden de Compra N°: " .$params['kpf_orden'], "read_result");
+    public function getOrderStatusByToken($flowOrderToken){
+        $url = config('flow.base_url') . '/payment/getStatus';
+        
+        $params = array(
+            "apiKey" => $this->api_key,
+            "token" => $flowOrderToken
+        );
+
+        $params["s"] = $this->signParams($params);
+        $response = $this->httpGet($url, $params);
+        $data = json_decode($response["output"], true);
+        return $data;
     }
 
     /**
@@ -326,79 +128,49 @@ class Flow {
         fclose($file);
     }
 
-
-    // Funciones Privadas
-    private function flow_get_public_key_id() {
-        //global $flow_keys;
-        try {
-            $fp = fopen(__DIR__."/keys/flow.pubkey", "r");
-            $pub_key = fread($fp, 8192);
-            fclose($fp);
-            return openssl_get_publickey($pub_key);
-        } catch (Exception $e) {
-            $this->flow_log("Error al intentar obtener la llave pública - Error-> " .$e->getMessage(), "flow_get_public_key_id");
-            throw new Exception($e->getMessage());
+    /**
+     * Funcion que hace el llamado via http POST
+     * @param string $url url a invocar
+     * @param array $params los datos a enviar
+     * @return array el resultado de la llamada
+     * @throws Exception
+     */
+    private function httpPost($url, $params) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+        curl_setopt($ch, CURLOPT_POST, TRUE);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+        $output = curl_exec($ch);
+        if($output === false) {
+            $error = curl_error($ch);
+            throw new Exception($error, 1);
         }
+        $info = curl_getinfo($ch);
+        curl_close($ch);
+        return array("output" =>$output, "info" => $info);
     }
-
-    private function flow_get_private_key_id() {
-        //global $flow_keys;
-        try {
-            $fp = fopen(config('flow.keys')."/comercio.pem", "r");
-            $priv_key = fread($fp, 8192);
-            fclose($fp);
-            return openssl_get_privatekey($priv_key);
-        } catch (Exception $e) {
-            $this->flow_log("Error al intentar obtener la llave privada - Error-> " .$e->getMessage(), "flow_get_private_key_id");
-            throw new Exception($e->getMessage());
+    
+    /**
+     * Funcion que hace el llamado via http GET
+     * @param string $url url a invocar
+     * @param array $params los datos a enviar
+     * @return array el resultado de la llamada
+     * @throws Exception
+     */
+    private function httpGet($url, $params) {
+        $url = $url . "?" . http_build_query($params);
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+        $output = curl_exec($ch);
+        if($output === false) {
+            $error = curl_error($ch);
+            throw new Exception($error, 1);
         }
-    }
-
-    private function flow_sign($data) {
-        $priv_key_id = $this->flow_get_private_key_id();
-        if(! openssl_sign($data, $signature, $priv_key_id)) {
-            $this->flow_log("No se pudo firmar", "flow_sign");
-            throw new Exception('It can not sign');
-        };
-        return base64_encode($signature);
-    }
-
-    private function flow_sign_validate($signature, $data) {
-
-        $signature = base64_decode($signature);
-        $response = explode("&s=", $data, 2);
-        $response = $response[0];
-
-        $pub_key_id = $this->flow_get_public_key_id();
-        return (openssl_verify($response, $signature, $pub_key_id) == 1);
-    }
-
-    private function flow_pack() {
-        //global $flow_comercio, $flow_url_exito, $flow_url_fracaso, $flow_url_confirmacion, $flow_tipo_integracion, $flow_url_retorno;
-        $tipo_integracion = urlencode(config('flow.tipo_integracion'));
-        $comercio = urlencode(config('flow.comercio'));
-        $orden_compra = urlencode($this->order["OrdenNumero"]);
-        $monto = urlencode($this->order["Monto"]);
-        $medioPago = urlencode($this->order["MedioPago"]);
-        $email = urlencode($this->order["Pagador"]);
-
-        $hConcepto = htmlentities($this->order["Concepto"]);
-        if (!$hConcepto) $hConcepto = htmlentities($concepto, ENT_COMPAT | ENT_HTML401, 'UTF-8');
-        if (!$hConcepto) $hConcepto = htmlentities($concepto, ENT_COMPAT | ENT_HTML401, 'ISO-8859-1');
-        if (!$hConcepto) $hConcepto = "Orden de Compra $orden_compra";
-
-        $concepto = urlencode($hConcepto);
-
-        $url_exito = urlencode($this->generarUrl(config('flow.url_exito')));
-        $url_fracaso = urlencode($this->generarUrl(config('flow.url_fracaso')));
-        $url_confirmacion = urlencode($this->generarUrl(config('flow.url_confirmacion')));
-        $url_retorno = urlencode($this->generarUrl(config('flow.url_retorno')));
-
-        $p = "c=$comercio&oc=$orden_compra&mp=$medioPago&m=$monto&o=$concepto&ue=$url_exito&uf=$url_fracaso&uc=$url_confirmacion&ti=$tipo_integracion&e=$email&v=kit_1_4&ur=$url_retorno";
-
-        $signature = $this->flow_sign($p);
-        $this->flow_log("Orden N°: ".$this->order["OrdenNumero"]. " -empaquetado correcto","flow_pack");
-        return $p."&s=$signature";
+        $info = curl_getinfo($ch);
+        curl_close($ch);
+        return array("output" =>$output, "info" => $info);
     }
 
     /**
@@ -424,4 +196,24 @@ class Flow {
             return $url;
         }
     }
+
+    /**
+     * Funcion que firma los parametros
+     * @param string $params Parametros a firmar
+     * @return string de firma
+     * @throws Exception
+     */
+    private function signParams($params) {
+        $keys = array_keys($params);
+        sort($keys);
+        $toSign = "";
+        foreach ($keys as $key) {
+            $toSign .= $key . $params[$key];
+        }
+        if(!function_exists("hash_hmac")) {
+            throw new Exception("function hash_hmac not exist", 1);
+        }
+        return hash_hmac('sha256', $toSign , $this->secretKey);
+    }
 }
+
