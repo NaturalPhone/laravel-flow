@@ -1,4 +1,4 @@
-# Laravel Flow
+# Laravel Flow 8+
 
 <p>
 <a href="https://packagist.org/packages/cokecancino/laravel-flow"><img src="https://img.shields.io/packagist/dt/cokecancino/laravel-flow" alt="Total Downloads"></a>
